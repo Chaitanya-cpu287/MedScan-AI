@@ -1,0 +1,18 @@
+{
+  "prescription_1.png": {
+    "original_dataset_index": 1,
+    "ground_truth_text": "<s_ocr> doctor_name: Dr. C. Rossi clinic_name: Oakview Hospital clinic_address: 45 Oak Ave. patient_name: Jane Smith patient_age: 38 date: 2024-12-16 medications: - Hydrochlorothiazide 250 mg - With food - Lisinopril 250 mg - Every 8 hours - Metformin 500 mg - After meals signature: Dr. C. Rossi </s>"
+  },
+  "prescription_2.png": {
+    "original_dataset_index": 6,
+    "ground_truth_text": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Greenwood Medical Center clinic_address: 45 Oak Ave. patient_name: Wei Li patient_age: 33 date: 2024-12-16 medications: - Atorvastatin 5 mg - Take once daily - Acetaminophen 5 mg - After meals - Prednisone 25 mg - At bedtime - Losartan 100 mg - At bedtime signature: Dr. A. Smith </s>"
+  },
+  "prescription_3.png": {
+    "original_dataset_index": 8,
+    "ground_truth_text": "<s_ocr> doctor_name: Dr. A. Smith clinic_name: Oakview Hospital clinic_address: 45 Oak Ave. patient_name: Maria Garcia patient_age: 42 date: 2024-12-16 medications: - Simvastatin 25 mg - Every 12 hours signature: Dr. A. Smith </s>"
+  },
+  "prescription_4.png": {
+    "original_dataset_index": 13,
+    "ground_truth_text": "<s_ocr> doctor_name: Dr. R. Patel clinic_name: Riverside Clinic clinic_address: 678 Orchard Ln. patient_name: Carlos Chavez patient_age: 28 date: 2024-12-16 medications: - Losartan 50 mg - At bedtime - Metformin 5 mg - As directed - Hydrochlorothiazide 5 mg - Every 12 hours - Amoxicillin 250 mg - As needed for pain signature: Dr. R. Patel </s>"
+  }
+}

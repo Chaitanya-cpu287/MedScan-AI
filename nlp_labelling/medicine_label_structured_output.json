@@ -1,0 +1,21 @@
+{
+    "document_type": "medicine_label",
+    "original_ocr_text": "PENTAB-DSR\n\n    PANTOPRAZOLE GASTRO-RESISTANT &\n    DOMPERIDONE PROLONGED RELEASE CAPSULES IP\n\n    Each hard gelatin capsule contains:\n\n    Pantoprazole Sodium Sesquihydrate IP\n    equivalent to Pantoprazole 40 mg.\n\n    Domperidone IP 30 mg.\n\n    Dosage: As directed by the physician.\n\n    Capsule should be swallowed whole and\n    not to be chewed, opened or crushed.",
+    "medicines": [
+        "Pantoprazole",
+        "Domperidone"
+    ],
+    "strengths": [
+        "40 mg",
+        "30 mg"
+    ],
+    "administration": [
+        "As directed by the physician",
+        "swallowed whole"
+    ],
+    "warnings": [
+        "not to be chewed, opened or crushed"
+    ],
+    "review_required": true,
+    "review_note": "Verify all extracted information against the original medicine label. Rule-based matches are not medical advice."
+}

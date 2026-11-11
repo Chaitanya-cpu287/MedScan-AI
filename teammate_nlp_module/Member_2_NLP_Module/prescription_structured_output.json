@@ -1,0 +1,36 @@
+{
+    "document_type": "prescription",
+    "original_ocr_text": "AMOXICILLIN 500 MG CAPSULES\n\n    Dosage:\n    Take one capsule three times daily after meals for 7 days.",
+    "medicines": [
+        "AMOXICILLIN"
+    ],
+    "strengths": [
+        "500 mg"
+    ],
+    "dose": [
+        {
+            "original_text": "one capsule",
+            "normalized_value": null
+        }
+    ],
+    "frequency": [
+        {
+            "original_text": "three times daily",
+            "normalized_value": null
+        }
+    ],
+    "timing": [
+        {
+            "original_text": "after meals",
+            "normalized_value": null
+        }
+    ],
+    "duration": [
+        {
+            "original_text": "7 days",
+            "normalized_value": null
+        }
+    ],
+    "review_required": true,
+    "review_note": "Verify extracted information against the original prescription. An empty field means the model did not extract a value."
+}

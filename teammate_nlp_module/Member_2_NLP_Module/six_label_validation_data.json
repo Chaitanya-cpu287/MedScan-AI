@@ -1,0 +1,392 @@
+[
+    {
+        "text": "Azithromycin 250 mg: Take one tablet once daily for 5 days.",
+        "entities": [
+            [
+                0,
+                12,
+                "MEDICINE"
+            ],
+            [
+                13,
+                19,
+                "STRENGTH"
+            ],
+            [
+                26,
+                36,
+                "DOSE"
+            ],
+            [
+                37,
+                47,
+                "FREQUENCY"
+            ],
+            [
+                52,
+                58,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Cetirizine 10 mg: Take half a tablet at bedtime for 7 days.",
+        "entities": [
+            [
+                0,
+                10,
+                "MEDICINE"
+            ],
+            [
+                11,
+                16,
+                "STRENGTH"
+            ],
+            [
+                23,
+                36,
+                "DOSE"
+            ],
+            [
+                37,
+                47,
+                "TIMING"
+            ],
+            [
+                52,
+                58,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Metformin 500 mg: Take two tablets twice daily after meals for 14 days.",
+        "entities": [
+            [
+                0,
+                9,
+                "MEDICINE"
+            ],
+            [
+                10,
+                16,
+                "STRENGTH"
+            ],
+            [
+                23,
+                34,
+                "DOSE"
+            ],
+            [
+                35,
+                46,
+                "FREQUENCY"
+            ],
+            [
+                47,
+                58,
+                "TIMING"
+            ],
+            [
+                63,
+                70,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Paracetamol 650 mg: Take one tablet every 8 hours for 3 days.",
+        "entities": [
+            [
+                0,
+                11,
+                "MEDICINE"
+            ],
+            [
+                12,
+                18,
+                "STRENGTH"
+            ],
+            [
+                25,
+                35,
+                "DOSE"
+            ],
+            [
+                36,
+                49,
+                "FREQUENCY"
+            ],
+            [
+                54,
+                60,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Pantoprazole 40 mg: Take one capsule before breakfast for 2 weeks.",
+        "entities": [
+            [
+                0,
+                12,
+                "MEDICINE"
+            ],
+            [
+                13,
+                18,
+                "STRENGTH"
+            ],
+            [
+                25,
+                36,
+                "DOSE"
+            ],
+            [
+                37,
+                53,
+                "TIMING"
+            ],
+            [
+                58,
+                65,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Vitamin D3 60000 IU: Take one capsule once weekly for 4 weeks.",
+        "entities": [
+            [
+                0,
+                10,
+                "MEDICINE"
+            ],
+            [
+                11,
+                19,
+                "STRENGTH"
+            ],
+            [
+                26,
+                37,
+                "DOSE"
+            ],
+            [
+                38,
+                49,
+                "FREQUENCY"
+            ],
+            [
+                54,
+                61,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Ibuprofen 200 mg: Take two tablets with food every 12 hours for 5 days.",
+        "entities": [
+            [
+                0,
+                9,
+                "MEDICINE"
+            ],
+            [
+                10,
+                16,
+                "STRENGTH"
+            ],
+            [
+                23,
+                34,
+                "DOSE"
+            ],
+            [
+                35,
+                44,
+                "TIMING"
+            ],
+            [
+                45,
+                59,
+                "FREQUENCY"
+            ],
+            [
+                64,
+                70,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Cough syrup 100 mg/5 ml: Take one measured spoon three times daily for 6 days.",
+        "entities": [
+            [
+                0,
+                11,
+                "MEDICINE"
+            ],
+            [
+                12,
+                23,
+                "STRENGTH"
+            ],
+            [
+                30,
+                48,
+                "DOSE"
+            ],
+            [
+                49,
+                66,
+                "FREQUENCY"
+            ],
+            [
+                71,
+                77,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Amoxicillin 500 mg: Take one capsule every 6 hours for 10 days.",
+        "entities": [
+            [
+                0,
+                11,
+                "MEDICINE"
+            ],
+            [
+                12,
+                18,
+                "STRENGTH"
+            ],
+            [
+                25,
+                36,
+                "DOSE"
+            ],
+            [
+                37,
+                50,
+                "FREQUENCY"
+            ],
+            [
+                55,
+                62,
+                "DURATION"
+            ]
+        ]
+    },
+    {
+        "text": "Amlodipine 5 mg: Take one tablet every morning after breakfast.",
+        "entities": [
+            [
+                0,
+                10,
+                "MEDICINE"
+            ],
+            [
+                11,
+                15,
+                "STRENGTH"
+            ],
+            [
+                22,
+                32,
+                "DOSE"
+            ],
+            [
+                33,
+                46,
+                "FREQUENCY"
+            ],
+            [
+                47,
+                62,
+                "TIMING"
+            ]
+        ]
+    },
+    {
+        "text": "Take the coated tablet intact using a full glass of water.",
+        "entities": [
+            [
+                0,
+                57,
+                "ADMINISTRATION"
+            ]
+        ]
+    },
+    {
+        "text": "Rub a small amount over the affected skin.",
+        "entities": [
+            [
+                0,
+                41,
+                "ADMINISTRATION"
+            ]
+        ]
+    },
+    {
+        "text": "Mix the powder thoroughly in water before use.",
+        "entities": [
+            [
+                0,
+                45,
+                "ADMINISTRATION"
+            ]
+        ]
+    },
+    {
+        "text": "Use the nasal spray according to the package instructions.",
+        "entities": [
+            [
+                0,
+                57,
+                "ADMINISTRATION"
+            ]
+        ]
+    },
+    {
+        "text": "Avoid driving if you experience drowsiness.",
+        "entities": [
+            [
+                0,
+                42,
+                "WARNING"
+            ]
+        ]
+    },
+    {
+        "text": "Do not use this medicine after its expiry date.",
+        "entities": [
+            [
+                0,
+                46,
+                "WARNING"
+            ]
+        ]
+    },
+    {
+        "text": "Protect the bottle from excessive heat.",
+        "entities": [
+            [
+                0,
+                38,
+                "WARNING"
+            ]
+        ]
+    },
+    {
+        "text": "Seek medical advice if an allergic reaction occurs.",
+        "entities": [
+            [
+                0,
+                50,
+                "WARNING"
+            ]
+        ]
+    }
+]
