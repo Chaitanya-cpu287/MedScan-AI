@@ -194,7 +194,7 @@ class TextNormalizer:
 
         # If not found via standalone label, fallback to regex search
         if not patient_name:
-            pat_match = re.search(r"(?:pa[tl]i?enti?|pt\.?|name|pelnt|patcni|alicnt)\s*[:=-]?\s*([A-Za-z\s]+?)(?=[,\.\s]*(?:age|aoo|dat[ceua]|sex|dr|mrs?|mr)\b|\n|$)", text, re.IGNORECASE)
+            pat_match = re.search(r"\b(?:pa[tl]i?enti?|pt\.?|name|pelnt|patcni|alicnt)\s*[:=-]?\s*([A-Za-z\s]+?)(?=[,\.\s]*(?:age|aoo|dat[ceua]|sex|dr|mrs?|mr)\b|\n|$)", text, re.IGNORECASE)
             if pat_match:
                 cand = pat_match.group(1).strip()
                 if len(cand) > 1 and not re.match(r"^(age|date|datc|sex|male|female)$", cand, re.IGNORECASE):
@@ -278,16 +278,34 @@ class TextNormalizer:
     def _clean_ocr_line(self, text: str) -> str:
         """De-noises OCR tokens, strips numbering prefixes, fixes character substitutions, and disentangles merged tokens."""
         c = text.strip()
-        # 1. Strip numbering prefixes e.g. '1) ', '2. ', '(3) ', '1- '
-        c = re.sub(r"^\s*(?:\(?\d{1,2}\)?[\.\-\)]|\d{1,2}\s*[\.\-\)])\s*", "", c)
+        # 1. Strip numbering prefixes e.g. '1) ', '2. ', '(3) ', '1- ' without breaking '1-0-1'
+        c = re.sub(r"^\s*(?:\(?\d{1,2}\)?[\.\)]|\d{1,2}\s*[\.\)]|\d{1,2}\s*-(?!\s*\d\s*-))\s*", "", c)
         # 2. Fix merged date prefix e.g. DATEO9-11-12 -> DATE 09-11-12
         c = re.sub(r"\b(date|datc|dt)[oO](\d)", r"\1 0\2", c, flags=re.IGNORECASE)
         # 3. Fix T1D/B1D/Q1D in words before splitting
         c = re.sub(r"T1D", "TID", c, flags=re.IGNORECASE)
         c = re.sub(r"B1D", "BID", c, flags=re.IGNORECASE)
         c = re.sub(r"Q1D", "QID", c, flags=re.IGNORECASE)
-        # 3. Fix digit 3 inside letters e.g. Pantopra3ole -> Pantoprazole
-        c = re.sub(r"(?<=[a-zA-Z])3(?=[a-zA-Z])", "z", c)
+        # 3b. Fix OCR dosing schedule & dosage unit typos: 'to-l' -> '1-0-1', '-0-1' -> '1-0-1', '1cmg'/'Icmg' -> '10 mg', '5mJ' -> '5 mg'
+        c = re.sub(r"\bto-?l\b", "1-0-1", c, flags=re.IGNORECASE)
+        c = re.sub(r"(?:^|\s)-0-1\b", " 1-0-1", c)
+        c = re.sub(r"([a-z]{3,})[I1l][c0o]\s*mg\b", r"\1 10 mg", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b([1-9])c\s*mg\b", r"\g<1>0 mg", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b(\d+(?:\.\d+)?)\s*m[jJ]\b", r"\1 mg", c)
+        c = re.sub(r"(?<![xX]\s)(?<!for\s)(?<=[A-Za-z\-\s])(\d+)\s*m\b", r"\1 mg", c)
+        c = re.sub(r"([a-z]{4,})[\-\s]?S[b0o][o0]\b", r"\1 500 mg", c)
+        c = re.sub(r"\bc[o0]?p\s*(tds|tid|bid|bd|od|qd|hs|sos)\b", r"1 cap \1", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b1\s*stabs?\b", "1 tab", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b1?\s*t[a5s][b6]\s*(OD|BD|BID|TID|TDS|QID|HS|SOS)\b", r"1 tab \1", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b[Il]?[t]?ab\s*(OD|BD|BID|TID|TDS|QID|HS|SOS)\b", r"1 tab \1", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b([BTQHSO])\.([D])\.([S])?\.?\b", lambda m: f"{m.group(1)}{m.group(2)}{m.group(3) or ''}", c)
+        c = re.sub(r"\b(\d+)\s*p[uf]{1,2}fs?\s*(sos|od|bd|bid|tid|tds|qid|hs)?\b", lambda m: f"{m.group(1)} puffs {m.group(2) or ''}".strip(), c, flags=re.IGNORECASE)
+        c = re.sub(r"(\d-\d-\d)\s*x\s*(\d+)\s*(?:days?|dy|d)\b", r"\1 for \2 days", c, flags=re.IGNORECASE)
+        # 3c. Split glued formulation suffixes e.g. SalbutamolJnhaler / Salbotamolinhale -> Salbutamol Inhaler
+        c = re.sub(r"([a-z]{3,})([IJfl1]?nhaler?s?|Tablet|Capsule|Syrup|Drops)\b", r"\1 \2", c, flags=re.IGNORECASE)
+        c = re.sub(r"\b[IJfl1]?nhaler?\b", "Inhaler", c, flags=re.IGNORECASE)
+        # 3d. Fix digit 3 inside letters e.g. Pantopra3ole -> Pantoprazole (never inside x3day)
+        c = re.sub(r"(?<=[a-zA-Z])(?<![xX])3(?=[a-zA-Z])", "z", c)
         # 4. Fix digit 0 inside letters e.g. Dol0 -> Dolo
         c = re.sub(r"(?<=[a-zA-Z])0(?=[a-zA-Z0-9\s\-_])", "o", c)
         # 5. Split attached letters and numbers e.g. Aoicillin5 -> Aoicillin 5, meitermin5mg -> meitermin 5mg
@@ -341,8 +359,8 @@ class TextNormalizer:
             return True
         if re.search(r"^\d+\s*(?:st|nd|rd|th)?\s*(?:street|st|road|rd|ave|lane)", cleaned, re.IGNORECASE):
             return True
-        # Patient metadata labels
-        if re.search(r"^(?:patient|pt[\.\s]|name|age|years?|yrs?|sex|gender|male|female|date|datc|dt|dateo|datco|address)\b", cleaned, re.IGNORECASE):
+        # Patient metadata labels (including common handwritten OCR variants)
+        if re.search(r"^(?:patient|pt[\.\s]|name|age|years?|yrs?|sex|gender|male|female|date|datc|datei|didie|dalc|davc|dt|dateo|datco|address|palleni|palcent|premani|queen\s*:)\b", cleaned, re.IGNORECASE):
             return True
         return False
 
@@ -355,7 +373,7 @@ class TextNormalizer:
         if re.search(r"^(?:take\s+|administer\s+|apply\s+|instill\s+|inhale\s+)?(?:\d+(?:/\d+)?|half|one|two|three|four)\s*(?:tabs?|tablets?|caps?|capsules?|drops?|puffs?|ml|tsp|spoon)\b", cleaned, re.IGNORECASE):
             return True
         # Frequency or timing start: e.g. OD, BD, TID, 1-0-1, before food, after meals
-        if re.search(r"^(?:od|bd|bid|tds|tid|qid|sos|hs|stat|prn|ttd|1-0-1|1-1-1|0-0-1|before\s*(?:food|meals?)|after\s*(?:food|meals?)|at\s*bedtime|empty\s*stomach)\b", cleaned, re.IGNORECASE):
+        if re.search(r"^(?:od|bd|bid|tds|tid|qid|sos|hs|stat|prn|ttd|\d-\d-\d|before\s*(?:food|meals?)|after\s*(?:food|meals?)|at\s*bedtime|empty\s*stomach)\b", cleaned, re.IGNORECASE):
             return True
         # Clinical indication / guidance
         if re.search(r"\b(?:for\s*(?:fever|pain|headache|cough|cold|infection|relief|sleep)|as\s*needed|plenty\s*of\s*water|review\s*after)\b", cleaned, re.IGNORECASE):
@@ -409,10 +427,10 @@ class TextNormalizer:
         """Extracts duration (e.g. 'for 5 days', '7 days', '1 month', 'x 3d') and remaining text."""
         duration = ""
         cleaned = text
-        pattern = r"\b(?:for\s+|x\s*)?(\d+\s*(?:days?|weeks?|months?|d|w|m))\b"
+        pattern = r"\b(?:(?:for|x)\s+(\d+\s*(?:d|w|m))|(?:for\s+|x\s*)?(\d+\s*(?:days?|weeks?|months?)))\b"
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            raw_dur = match.group(1)
+            raw_dur = (match.group(1) or match.group(2)).strip()
             # Expand '3d' -> '3 days'
             if raw_dur.lower().endswith("d") and not raw_dur.lower().endswith("nd"):
                 num = raw_dur[:-1].strip()
@@ -464,7 +482,7 @@ class TextNormalizer:
         # Check for dose quantity e.g. '2 tabs', '1 cap', 'half tablet'
         qty_str = "one"
         if custom_inst:
-            m_qty = re.search(r"\b(1/2|half|[1-9])\s*(?:tabs?|tablets?|caps?|capsules?)\b", custom_inst, re.IGNORECASE)
+            m_qty = re.search(r"\b(1/2|half|[1-9])\s*(?:tabs?|tablets?|caps?|capsules?|puffs?|drops?)\b", custom_inst, re.IGNORECASE)
             if m_qty:
                 q_val = m_qty.group(1).lower()
                 q_map = {"1": "one", "2": "two", "3": "three", "4": "four", "1/2": "half", "half": "half"}
@@ -706,8 +724,18 @@ class TextNormalizer:
             dose_qty = current_med_candidate.get("dose_qty", "")
             custom_inst_full = f"{dose_qty} {food_raw}".strip()
 
+            final_formulation = match_res.formulation
+            if final_formulation == "TAB." and dose_qty:
+                dq_lower = dose_qty.lower()
+                if "cap" in dq_lower:
+                    final_formulation = "CAP."
+                elif "puff" in dq_lower:
+                    final_formulation = "INH."
+                elif "drop" in dq_lower:
+                    final_formulation = "DROPS"
+
             readable = self._build_readable_sentence(
-                formulation=match_res.formulation,
+                formulation=final_formulation,
                 dosage=final_dosage,
                 freq_eng=freq_interp.expanded_english,
                 food_eng=food_eng,
@@ -730,7 +758,7 @@ class TextNormalizer:
             medications.append(NormalizedMedication(
                 original_text=drug_raw,
                 medicine_name=match_res.matched_name,
-                formulation=match_res.formulation,
+                formulation=final_formulation,
                 dosage=final_dosage,
                 frequency=freq_interp.original_notation or (freq_raw if freq_raw else "Not specified"),
                 duration=final_duration,
@@ -764,7 +792,8 @@ class TextNormalizer:
                 continue
 
             # 2. Check if line contains general clinical advice instruction
-            if re.search(r"\b(drink plenty|avoid cold|review after|rest|water|sufficient water|exceed)\b", line_clean, re.IGNORECASE):
+            if re.search(r"^(?:adv|advice|aday|ad\.)\s*[:\.\-]|\b(drink plenty|avoid\s+\w+|review after|rest|water|sufficient water|exceed)\b", line_clean, re.IGNORECASE):
+                flush_current()
                 additional_instructions.append(line_clean)
                 continue
 
@@ -786,14 +815,22 @@ class TextNormalizer:
                     elif re.search(r"\bfor\s+([a-zA-Z\s]+)", rem_inst, re.IGNORECASE):
                         m_for = re.search(r"\b(for\s+[a-zA-Z\s]+)", rem_inst, re.IGNORECASE)
                         current_med_candidate["instructions"] = m_for.group(1).strip()
-                    # Extract dose quantity e.g. 1 tab, 2 tabs
-                    m_qty = re.search(r"\b(\d+(?:/\d+)?|half|one|two)\s*(?:tabs?|tablets?|caps?|capsules?)\b", rem_inst, re.IGNORECASE)
+                    # Extract dose quantity e.g. 1 tab, 2 tabs, 2 puffs, 2 drops
+                    m_qty = re.search(r"\b(\d+(?:/\d+)?|half|one|two|three|four)\s*(?:tabs?|tablets?|caps?|capsules?|puffs?|drops?)\b", rem_inst, re.IGNORECASE)
                     if m_qty:
                         current_med_candidate["dose_qty"] = m_qty.group(0)
                 continue
 
-            # 4. Handle bullet or hyphen separated drug and instruction e.g. 'Betaloc 100mg - 1 tab BID'
-            sub_parts = [p.strip() for p in re.split(r"\s*[-–—]\s*", line_clean) if p.strip()]
+            # 4. Handle bullet, hyphen, or period separated drug and instruction e.g. 'Betaloc 100mg - 1 tab BID' or 'Simvastatin 25 mg. Every 12 hours'
+            sub_parts = [
+                p.strip()
+                for p in re.split(
+                    r"\s*[-–—]\s*|\s*\.\s+(?=(?:every|with|after|before|take|as\s|at\s|once|twice|three|four|daily|for\s))",
+                    line_clean,
+                    flags=re.IGNORECASE,
+                )
+                if p.strip()
+            ]
             primary_segment = sub_parts[0] if sub_parts else line_clean
             instruction_segment = " ".join(sub_parts[1:]) if len(sub_parts) > 1 else ""
 
@@ -820,13 +857,17 @@ class TextNormalizer:
             has_explicit_form = any(re.search(rf"\b{f}\b", line_clean, re.IGNORECASE) for f in FORMULATIONS.keys())
             has_explicit_dosage = bool(dosage and re.search(r"\b(?:mg|gm|g|mcg|ml|iu|%)\b", dosage, re.IGNORECASE))
 
-            # Test if rem_line matches a medicine candidate
-            match_test = self.matcher.match_medicine_name(rem_line)
+            # Strip parenthetical brand annotations e.g. '(Zyrtec, Okacet)' or unclosed '(Singulair, Montair' before matching
+            rem_line_clean = re.sub(r"\([^)]*\)?", "", rem_line).strip()
+            rem_line_clean = re.sub(r"\s+", " ", rem_line_clean).strip()
+
+            # Test if rem_line_clean matches a medicine candidate
+            match_test = self.matcher.match_medicine_name(rem_line_clean or rem_line)
             is_medicine_line = (
                 match_test.confidence_score >= 70
-                or (has_explicit_form and match_test.confidence_score >= 60 and len(rem_line.strip()) >= 3)
-                or (has_explicit_dosage and match_test.confidence_score >= 60 and len(rem_line.strip()) >= 3)
-                or (has_explicit_dosage and has_explicit_form and len(rem_line.strip()) >= 3)
+                or (has_explicit_form and match_test.confidence_score >= 60 and len(rem_line_clean) >= 3)
+                or (has_explicit_dosage and match_test.confidence_score >= 60 and len(rem_line_clean) >= 3)
+                or (has_explicit_dosage and has_explicit_form and len(rem_line_clean) >= 3)
             )
 
             if is_medicine_line:
@@ -839,7 +880,7 @@ class TextNormalizer:
                 food_inst = AbbreviationHandler.interpret_food_timing(rem_inst_clean)
 
                 current_med_candidate = {
-                    "raw_name": rem_line if rem_line else line_clean,
+                    "raw_name": rem_line_clean if rem_line_clean else (rem_line if rem_line else line_clean),
                     "dosage": dosage,
                     "frequency": f_inst.original_notation if f_inst.is_standard else (freq_interp.original_notation if freq_interp.is_standard else ""),
                     "duration": duration,

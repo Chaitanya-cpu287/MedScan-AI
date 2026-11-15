@@ -13,15 +13,26 @@ from models.memory_manager import MemoryManager
 from ocr.ocr_engine import OCRMode
 from normalization.text_normalizer import NormalizedPrescription
 from normalization.medicine_label_normalizer import NormalizedMedicineLabel
-from localization import (
-    t,
-    SUPPORTED_LANGUAGES,
-    get_language_options,
-    get_language_info,
+from translations import t, LANGUAGES
+import streamlit.components.v1 as components
+from tts_reader import (
+    build_regimens_speech_text,
+    build_audit_speech_text,
+    build_label_composition_speech_text,
+    generate_speech_audio,
+    get_browser_speech_html,
 )
-from voice_assistant import (
-    VoiceManager,
-    SpeechTextFormatter,
+from clinical_translator import (
+    translate_formulation,
+    translate_timing,
+    translate_daily_intake,
+    translate_dose,
+    translate_clinical_instruction,
+    translate_audit_reason,
+    translate_safety_message,
+    format_audit_dataframe,
+    build_localized_prescription_card,
+    build_localized_prescription_text,
 )
 
 st.set_page_config(
@@ -353,24 +364,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Initialize Session State & Singletons
+# Initialize Session State
 @st.cache_resource
 def get_pipeline() -> PrescriptionPipeline:
     return PrescriptionPipeline()
 
-@st.cache_resource
-def get_voice_manager() -> VoiceManager:
-    return VoiceManager()
-
 pipeline = get_pipeline()
-voice_mgr = get_voice_manager()
-
-if "selected_language" not in st.session_state:
-    st.session_state.selected_language = "en"
-if "voice_mode" not in st.session_state:
-    st.session_state.voice_mode = "auto"
-if "active_voice_resp" not in st.session_state:
-    st.session_state.active_voice_resp = None
 
 if "current_image" not in st.session_state:
     st.session_state.current_image = None
@@ -388,114 +387,124 @@ if "nlp_labels" not in st.session_state:
     st.session_state.nlp_labels = None
 if "detected_doc_type" not in st.session_state:
     st.session_state.detected_doc_type = "prescription"
+if "user_lang" not in st.session_state:
+    st.session_state.user_lang = "en"
 
-lang = st.session_state.selected_language
+def tr(key: str) -> str:
+    """Translation helper for current user language."""
+    return t(key, st.session_state.user_lang)
+
+
+# TOP NAVIGATION & MULTILINGUAL LANGUAGE SELECTOR BAR
+col_nav_brand, col_nav_lang = st.columns([2.5, 1.5])
+with col_nav_brand:
+    st.markdown("""
+    <div style="display:flex; align-items:center; gap:0.6rem; padding: 0.2rem 0 0.8rem 0;">
+        <span style="font-size: 1.5rem;">💊</span>
+        <span style="font-weight: 800; font-size: 1.3rem; color: #1E3A8A; letter-spacing: -0.02em;">MediScan AI</span>
+        <span style="background: #EFF6FF; color: #2563EB; font-size: 0.72rem; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 9999px; border: 1px solid #BFDBFE;">HEALTHCARE</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col_nav_lang:
+    selected_lang = st.selectbox(
+        "🌐 " + tr("language_selector_label"),
+        options=list(LANGUAGES.keys()),
+        format_func=lambda code: f"{LANGUAGES[code]['flag']} {LANGUAGES[code]['native']} ({LANGUAGES[code]['name']})",
+        index=list(LANGUAGES.keys()).index(st.session_state.user_lang),
+        key="top_language_selector",
+        help="Select language: English, हिन्दी, తెలుగు, தமிழ், বাংলা, मराठी, ಕನ್ನಡ, ગુજરાતી, മലയാളം, ਪੰਜਾਬੀ",
+    )
+    if selected_lang != st.session_state.user_lang:
+        st.session_state.user_lang = selected_lang
+        st.rerun()
 
 
 # SIDEBAR: Scanner Preferences & Settings
 with st.sidebar:
-    # 1. Interface Language Selector (Top Priority)
-    st.markdown(f"### {t('sidebar_lang_selector', lang)}")
-    lang_opts = get_language_options()
-    lang_idx = lang_opts.index(lang) if lang in lang_opts else 0
-
-    chosen_lang = st.selectbox(
-        t("sidebar_lang_selector", lang),
-        options=lang_opts,
-        index=lang_idx,
-        format_func=lambda c: get_language_info(c).display_label,
-        key="global_lang_dropdown",
-        label_visibility="collapsed",
-    )
-    if chosen_lang != st.session_state.selected_language:
-        st.session_state.selected_language = chosen_lang
-        st.session_state.active_voice_resp = None
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown(f"### ⚙️ {t('system_brand', lang)}")
+    st.markdown(f"### {tr('sidebar_preferences')}")
     
     # Clinical Status & Security Card
     st.markdown(f"""
     <div class="sidebar-status-card">
         <div style="font-weight:700; font-size:0.95rem; margin-bottom:0.75rem; display:flex; justify-content:space-between; align-items:center;">
-            <span>{t('sidebar_security_title', lang)}</span>
-            <span class="status-tag">ACTIVE</span>
+            <span>{tr('sidebar_status_title')}</span>
+            <span class="status-tag">{tr('sidebar_status_active')}</span>
         </div>
         <div class="status-row">
-            <span style="color:#94A3B8;">{t('sidebar_status_active', lang)}</span>
-            <span style="color:#38BDF8; font-weight:600;">{t('status_verified', lang)}</span>
+            <span style="color:#94A3B8;">{tr('sidebar_verification')}</span>
+            <span style="color:#38BDF8; font-weight:600;">{tr('sidebar_verification_val')}</span>
         </div>
         <div class="status-row">
-            <span style="color:#94A3B8;">{t('badge_safety', lang)}</span>
-            <span style="color:#10B981; font-weight:600;">{t('sidebar_audit_passed', lang)}</span>
+            <span style="color:#94A3B8;">{tr('sidebar_safeguard')}</span>
+            <span style="color:#10B981; font-weight:600;">{tr('sidebar_safeguard_val')}</span>
         </div>
         <div class="status-row">
-            <span style="color:#94A3B8;">{t('sidebar_privacy_verified', lang)}</span>
-            <span style="color:#F8FAFC; font-weight:600;">HIPAA</span>
+            <span style="color:#94A3B8;">{tr('sidebar_privacy')}</span>
+            <span style="color:#F8FAFC; font-weight:600;">{tr('sidebar_privacy_val')}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.markdown(f"### {t('sidebar_processing_mode', lang)}")
+    st.markdown(f"### {tr('sidebar_mode_title')}")
     
     ocr_mode_choice = st.selectbox(
-        t("sidebar_scan_precision", lang),
+        tr("sidebar_precision_label"),
         options=[OCRMode.AUTO.value, OCRMode.RAPID_OCR.value, OCRMode.CLOUD_HF.value, OCRMode.LOCAL_QWEN.value],
         format_func=lambda x: {
-            "auto": t("mode_auto", lang),
-            "rapid_ocr": t("mode_rapid", lang),
-            "cloud_hf": t("mode_cloud", lang),
-            "local_qwen": t("mode_local", lang),
+            "auto": tr("mode_auto"),
+            "rapid_ocr": tr("mode_rapid"),
+            "cloud_hf": tr("mode_cloud"),
+            "local_qwen": tr("mode_neural"),
         }.get(x, x),
         index=0,
-        help=t("sidebar_scan_precision_help", lang),
+        help="Auto automatically optimizes for performance and accuracy.",
     )
 
     hf_token_input = st.text_input(
-        t("sidebar_cloud_key", lang),
+        tr("sidebar_key_label"),
         type="password",
-        help=t("sidebar_cloud_key_help", lang),
+        help=tr("sidebar_key_help"),
     )
 
     st.markdown("---")
-    st.markdown(f"### {t('sidebar_doc_classifier', lang)}")
+    st.markdown(f"### {tr('sidebar_classifier_title')}")
     doc_type_choice = st.selectbox(
-        t("sidebar_doc_category", lang),
+        tr("sidebar_doc_category"),
         options=["auto", "prescription", "medicine_label"],
         format_func=lambda x: {
-            "auto": t("doc_auto", lang),
-            "prescription": t("doc_rx", lang),
-            "medicine_label": t("doc_label", lang),
+            "auto": tr("doc_auto"),
+            "prescription": tr("doc_rx"),
+            "medicine_label": tr("doc_label"),
         }.get(x, x),
         index=0,
-        help=t("sidebar_doc_category_help", lang),
+        help="Auto-detects whether the image is a doctor's prescription or a medicine packaging label.",
     )
 
     st.markdown("---")
-    st.markdown(f"### {t('sidebar_img_preproc', lang)}")
-    apply_clahe = st.checkbox(t("sidebar_clahe", lang), value=True, help=t("sidebar_clahe_help", lang))
-    apply_denoise = st.checkbox(t("sidebar_denoise", lang), value=False, help=t("sidebar_denoise_help", lang))
-    apply_deskew = st.checkbox(t("sidebar_deskew", lang), value=False, help=t("sidebar_deskew_help", lang))
+    st.markdown(f"### {tr('sidebar_vision_title')}")
+    apply_clahe = st.checkbox(tr("enhance_clahe"), value=True, help="Adaptive contrast for faint ink.")
+    apply_denoise = st.checkbox(tr("enhance_denoise"), value=False, help="Filters background paper texture.")
+    apply_deskew = st.checkbox(tr("enhance_deskew"), value=True, help="Aligns tilted document orientation.")
 
     st.markdown("---")
-    st.caption(f"{t('system_brand', lang)}")
+    st.caption(tr("sidebar_footer"))
 
 
 # MAIN PANEL HERO BANNER
 st.markdown(f"""
 <div class="hero-container">
-    <div class="hero-badge-pill"><span class="beacon-dot"></span> {t('app_badge_active', lang)}</div>
-    <div class="hero-title">{t('app_title', lang)}</div>
+    <div class="hero-badge-pill"><span class="beacon-dot"></span> {tr('scanner_active')}</div>
+    <div class="hero-title">{tr('hero_title_prefix')} <span>{tr('hero_title_suffix')}</span></div>
     <div class="hero-subtitle">
-        {t('app_subtitle', lang)}
+        {tr('hero_subtitle')}
     </div>
     <div class="badge-bar">
-        <span class="pill-badge">{t('badge_digitization', lang)}</span>
-        <span class="pill-badge">{t('badge_regimen', lang)}</span>
-        <span class="pill-badge">{t('badge_composition', lang)}</span>
-        <span class="pill-badge">{t('badge_safety', lang)}</span>
+        <span class="pill-badge">{tr('badge_digitization')}</span>
+        <span class="pill-badge">{tr('badge_regimen')}</span>
+        <span class="pill-badge">{tr('badge_composition')}</span>
+        <span class="pill-badge">{tr('badge_safety')}</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -505,7 +514,7 @@ st.markdown(f"""
 st.markdown(f"""
 <div class="section-header">
     <div class="section-number">1</div>
-    <div class="section-title-text">{t('sec_1_title', lang)}</div>
+    <div class="section-title-text">{tr('sec1_title')}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -513,16 +522,16 @@ col_upload, col_sample = st.columns([2, 1])
 
 with col_upload:
     uploaded_file = st.file_uploader(
-        t("upload_label", lang),
+        tr("upload_label"),
         type=["jpg", "jpeg", "png", "webp"],
-        help=t("upload_help", lang),
+        help=tr("upload_help"),
     )
     if uploaded_file is not None:
         st.session_state.current_image = Image.open(uploaded_file)
         st.session_state.current_image_name = uploaded_file.name
 
 with col_sample:
-    st.markdown(f"**{t('sample_or_title', lang)}**")
+    st.markdown(f"**{tr('sample_heading')}**")
     sample_dir = CONFIG.sample_data_dir
     sample_files = sorted([
         f for f in sample_dir.iterdir()
@@ -533,12 +542,12 @@ with col_sample:
     
     def format_sample_name(name: str) -> str:
         if name == "None":
-            return t("sample_none", lang)
+            return tr("sample_none")
         if "label" in name.lower():
             return f"🏷️ [Label] {name}"
         return f"📝 [Rx] {name}"
     
-    selected_sample = st.selectbox(t("sample_select_label", lang), sample_options, format_func=format_sample_name)
+    selected_sample = st.selectbox(tr("sample_select_label"), sample_options, format_func=format_sample_name)
     if selected_sample != "None":
         sample_path = sample_dir / selected_sample
         st.session_state.current_image = Image.open(sample_path)
@@ -551,33 +560,33 @@ if st.session_state.current_image is not None:
     col_img, col_meta = st.columns([1, 1])
     
     with col_img:
-        st.image(img, caption=f"Loaded Image: {st.session_state.current_image_name}", width="stretch")
+        st.image(img, caption=f"{tr('loaded_image_caption')}: {st.session_state.current_image_name}", width="stretch")
     
     with col_meta:
         st.markdown(f"""
         <div class="glass-card" style="margin-bottom: 1.2rem;">
             <div style="font-weight: 700; font-size: 1.05rem; color: #1E3A8A; margin-bottom: 0.8rem; display: flex; align-items: center; gap: 0.4rem;">
-                <span>{t('img_meta_title', lang)}</span>
+                <span>{tr('meta_title')}</span>
             </div>
             <div style="display: flex; gap: 0.6rem; flex-wrap: wrap;">
-                <span class="pill-badge">📐 <b>{t('meta_dimensions', lang)}:</b> {img.width} × {img.height} px</span>
-                <span class="pill-badge">🎨 <b>{t('meta_color_mode', lang)}:</b> {img.mode}</span>
-                <span class="pill-badge">📏 <b>{t('meta_aspect_ratio', lang)}:</b> {round(img.width / max(1, img.height), 2)}</span>
+                <span class="pill-badge">📐 <b>{tr('meta_dimensions')}:</b> {img.width} × {img.height} px</span>
+                <span class="pill-badge">🎨 <b>{tr('meta_color')}:</b> {img.mode}</span>
+                <span class="pill-badge">📏 <b>{tr('meta_aspect')}:</b> {round(img.width / max(1, img.height), 2)}</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
         
         # Action Buttons
-        st.markdown(f"### ⚡ {t('pipeline_actions_title', lang)}")
+        st.markdown(f"### {tr('pipeline_action_controls')}")
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            run_all_btn = st.button(t("btn_run_pipeline", lang), type="primary", width="stretch")
+            run_all_btn = st.button(tr("btn_run_all"), type="primary", width="stretch")
         with col_btn2:
-            extract_ocr_btn = st.button(t("btn_extract_ocr", lang), width="stretch")
+            extract_ocr_btn = st.button(tr("btn_extract_ocr"), width="stretch")
 
     # RUN COMPLETE PIPELINE
     if run_all_btn:
-        with st.spinner(t("spinner_pipeline", lang)):
+        with st.spinner(tr("spinner_pipeline")):
             res: PipelineResult = pipeline.process(
                 image_source=st.session_state.current_image,
                 ocr_mode=ocr_mode_choice,
@@ -595,11 +604,12 @@ if st.session_state.current_image is not None:
             st.session_state.validation_report = res.validation_report
             st.session_state.nlp_labels = res.nlp_labels
             st.session_state.detected_doc_type = res.document_type
-        st.success(f"{t('msg_pipeline_success', lang)} ({res.document_type.replace('_', ' ').title()})!")
+        doc_disp = tr("doc_label") if res.document_type == "medicine_label" else tr("doc_rx")
+        st.success(f"✅ {tr('success_pipeline')} ({doc_disp})!")
 
     # EXTRACT OCR ONLY
     elif extract_ocr_btn:
-        with st.spinner(t("spinner_ocr", lang)):
+        with st.spinner(tr("spinner_ocr")):
             prep = pipeline.preprocessor.process(
                 image_source=st.session_state.current_image,
                 apply_contrast=apply_clahe,
@@ -615,7 +625,7 @@ if st.session_state.current_image is not None:
             # Reset downstream
             st.session_state.normalized_result = None
             st.session_state.validation_report = None
-        st.success(f"{t('msg_ocr_success', lang)} {ocr_res.inference_time_sec}s")
+        st.success(f"✅ {tr('success_ocr')} {ocr_res.inference_time_sec}s")
 
 
 # SECTION 2: RAW OCR EXTRACTION
@@ -624,21 +634,21 @@ if st.session_state.raw_ocr_text:
     st.markdown(f"""
     <div class="section-header">
         <div class="section-number">2</div>
-        <div class="section-title-text">{t('sec_2_title', lang)}</div>
+        <div class="section-title-text">{tr('sec2_title')}</div>
     </div>
     """, unsafe_allow_html=True)
     
     col_raw, col_raw_ctrl = st.columns([3, 1])
     with col_raw:
-        st.text_area(t("extracted_text_label", lang), value=st.session_state.raw_ocr_text, height=180)
+        st.text_area(tr("extracted_text_label"), value=st.session_state.raw_ocr_text, height=180)
     
     with col_raw_ctrl:
-        st.metric(t("metric_char_count", lang), len(st.session_state.raw_ocr_text))
-        st.metric(t("metric_line_count", lang), len([l for l in st.session_state.raw_ocr_text.splitlines() if l.strip()]))
-        norm_btn = st.button(t("btn_normalize", lang), type="secondary", width="stretch")
+        st.metric(tr("char_count"), len(st.session_state.raw_ocr_text))
+        st.metric(tr("line_count"), len([l for l in st.session_state.raw_ocr_text.splitlines() if l.strip()]))
+        norm_btn = st.button(tr("btn_normalize"), type="secondary", width="stretch")
 
     if norm_btn:
-        with st.spinner(t("spinner_normalize", lang)):
+        with st.spinner(tr("spinner_normalize")):
             norm = pipeline.normalizer.normalize(st.session_state.raw_ocr_text, doc_type=doc_type_choice)
             val = pipeline.validator.validate(st.session_state.raw_ocr_text, norm)
             is_label = isinstance(norm, NormalizedMedicineLabel)
@@ -660,7 +670,8 @@ if st.session_state.raw_ocr_text:
             st.session_state.validation_report = val
             st.session_state.nlp_labels = nlp_labels
             st.session_state.detected_doc_type = detected_type
-        st.success(f"✅ Normalization & Clinical Verification completed ({detected_type.replace('_', ' ').title()})!")
+        doc_disp = tr("doc_label") if detected_type == "medicine_label" else tr("doc_rx")
+        st.success(f"✅ {tr('success_normalize')} ({doc_disp})!")
 
 
 # SECTION 3: INTELLIGENT NORMALIZATION & VALIDATION
@@ -670,11 +681,11 @@ if st.session_state.normalized_result is not None:
     is_label = isinstance(norm, NormalizedMedicineLabel)
 
     st.markdown("---")
-    sec_3_heading = t("sec_3_title_label", lang) if is_label else t("sec_3_title_rx", lang)
+    doc_title = tr("doc_label") if is_label else tr("doc_rx")
     st.markdown(f"""
     <div class="section-header">
         <div class="section-number">3</div>
-        <div class="section-title-text">{sec_3_heading}</div>
+        <div class="section-title-text">{tr('sec3_title')} ({doc_title})</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -684,8 +695,8 @@ if st.session_state.normalized_result is not None:
         <div style="background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%); border: 1px solid #6EE7B7; border-radius: 12px; padding: 1rem 1.4rem; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);">
             <span style="font-size: 1.6rem;">🛡️</span>
             <div>
-                <div style="font-weight: 700; color: #065F46; font-size: 1rem;">{t('safety_passed_title', lang)}</div>
-                <div style="color: #047857; font-size: 0.88rem;">{t('safety_passed_desc', lang)}</div>
+                <div style="font-weight: 700; color: #065F46; font-size: 1rem;">{tr('banner_safe_title')}</div>
+                <div style="color: #047857; font-size: 0.88rem;">{tr('banner_safe_desc')}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -694,8 +705,8 @@ if st.session_state.normalized_result is not None:
         <div style="background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%); border: 1px solid #FCD34D; border-radius: 12px; padding: 1rem 1.4rem; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);">
             <span style="font-size: 1.6rem;">⚠️</span>
             <div>
-                <div style="font-weight: 700; color: #92400E; font-size: 1rem;">{t('safety_review_title', lang)}</div>
-                <div style="color: #B45309; font-size: 0.88rem;">{t('safety_review_desc', lang)}</div>
+                <div style="font-weight: 700; color: #92400E; font-size: 1rem;">{tr('banner_review_title')}</div>
+                <div style="color: #B45309; font-size: 0.88rem;">{tr('banner_review_desc')}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -704,8 +715,8 @@ if st.session_state.normalized_result is not None:
         <div style="background: linear-gradient(135deg, #FFF1F2 0%, #FFE4E6 100%); border: 1px solid #FDA4AF; border-radius: 12px; padding: 1rem 1.4rem; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.8rem; box-shadow: 0 4px 12px rgba(244, 63, 94, 0.08);">
             <span style="font-size: 1.6rem;">🚨</span>
             <div>
-                <div style="font-weight: 700; color: #9F1239; font-size: 1rem;">{t('safety_critical_title', lang)}</div>
-                <div style="color: #BE123C; font-size: 0.88rem;">{t('safety_critical_desc', lang)}</div>
+                <div style="font-weight: 700; color: #9F1239; font-size: 1rem;">{tr('banner_critical_title')}</div>
+                <div style="color: #BE123C; font-size: 0.88rem;">{tr('banner_critical_desc')}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -713,330 +724,355 @@ if st.session_state.normalized_result is not None:
     if is_label:
         # TABS FOR MEDICINE PACKAGING LABEL
         tab_norm, tab_comp, tab_nlp, tab_audit, tab_compare = st.tabs([
-            t("tab_label_standard", lang),
-            t("tab_label_composition", lang),
-            t("tab_label_details", lang),
-            t("tab_label_audit", lang),
-            t("tab_label_comparison", lang),
+            tr("tab_lbl_standard"),
+            tr("tab_lbl_comp"),
+            tr("tab_lbl_details"),
+            tr("tab_lbl_audit"),
+            tr("tab_lbl_compare"),
         ])
 
         with tab_norm:
-            st.markdown(f"#### {t('label_header_standard', lang)}")
+            st.markdown(f"#### {tr('lbl_record_heading')}")
             st.code(norm.to_formatted_text(), language="markdown")
 
         with tab_comp:
-            st.markdown(f"##### {t('label_header_composition', lang)}")
+            col_comp_h, col_comp_btn = st.columns([3, 1])
+            with col_comp_h:
+                st.markdown(f"##### {tr('lbl_comp_heading')}")
+            with col_comp_btn:
+                speak_comp_btn = st.button(tr("btn_read_out"), key="speak_comp_btn", width="stretch")
+
+            if speak_comp_btn and norm.active_ingredients:
+                with st.spinner("Generating speech in selected language..."):
+                    speech_text = build_label_composition_speech_text(norm.active_ingredients, lang=st.session_state.user_lang)
+                    audio_bytes = generate_speech_audio(speech_text, lang=st.session_state.user_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                    else:
+                        html_code = get_browser_speech_html(
+                            speech_text,
+                            lang=st.session_state.user_lang,
+                            button_id="browser_speak_comp",
+                            button_label=tr("btn_read_out")
+                        )
+                        components.html(html_code, height=45)
+
             if norm.active_ingredients:
                 ing_records = [
                     {
-                        t("col_ing_name", lang): ing.name,
-                        t("col_std_generic", lang): ing.standard_name,
-                        t("col_strength", lang): ing.strength,
-                        t("col_status", lang): t("status_verified", lang) if ing.is_verified else t("status_review_yes", lang),
+                        tr("lbl_col_ingredient"): ing.name,
+                        tr("lbl_col_generic"): ing.standard_name,
+                        tr("lbl_col_strength"): ing.strength,
+                        tr("lbl_col_status"): tr("flag_verified") if ing.is_verified else tr("flag_review"),
                     }
                     for ing in norm.active_ingredients
                 ]
                 st.dataframe(pd.DataFrame(ing_records), width="stretch")
             else:
-                st.info(t("no_active_ingredients", lang))
+                st.info(tr("lbl_no_ing"))
 
             col_a1, col_a2 = st.columns(2)
             with col_a1:
-                st.markdown(f"##### {t('dosage_admin_header', lang)}")
+                st.markdown(f"##### {tr('lbl_admin_heading')}")
                 for adm in norm.dosage_and_administration:
                     st.info(f"👉 {adm}")
                 if not norm.dosage_and_administration:
-                    st.caption(t("std_dosage_directed", lang))
+                    st.caption(tr("lbl_std_admin"))
 
-                st.markdown(f"##### {t('storage_header', lang)}")
+                st.markdown(f"##### {tr('lbl_storage_heading')}")
                 for stor in norm.storage_instructions:
                     st.success(f"📦 {stor}")
                 if not norm.storage_instructions:
-                    st.caption(t("std_storage_cool", lang))
+                    st.caption(tr("lbl_std_storage"))
 
             with col_a2:
-                st.markdown(f"##### {t('warnings_precautions_header', lang)}")
+                st.markdown(f"##### {tr('lbl_warnings_heading')}")
                 for w in norm.warnings_and_precautions:
                     st.warning(f"⚠️ {w}")
                 if not norm.warnings_and_precautions:
-                    st.caption(t("std_precautions_apply", lang))
+                    st.caption(tr("lbl_std_warnings"))
 
                 if norm.dosing_safety_alerts:
-                    st.markdown(f"##### {t('dosing_safety_header', lang)}")
+                    st.markdown(f"##### {tr('lbl_alerts_heading')}")
                     for alert in norm.dosing_safety_alerts:
                         st.error(f"🚨 {alert}")
 
         with tab_nlp:
-            st.markdown(f"#### {t('pkg_info_header', lang)}")
+            st.markdown(f"#### {tr('lbl_extracted_info')}")
             nlp_data = st.session_state.nlp_labels
             if nlp_data:
                 col_nl1, col_nl2 = st.columns(2)
                 with col_nl1:
-                    st.markdown(f"**{t('identified_meds_strengths', lang)}:**")
-                    st.write(f"- `{', '.join(nlp_data.get('medicines', [])) or 'None'}`")
-                    st.write(f"- `{', '.join(nlp_data.get('strengths', [])) or 'None'}`")
-                    st.markdown(f"**{t('administration_rules', lang)}:**")
+                    st.markdown(f"**{tr('lbl_ident_meds')}**")
+                    st.write(f"- **{tr('col_medicine')}:** `{', '.join(nlp_data.get('medicines', [])) or '—'}`")
+                    st.write(f"- **{tr('col_strength')}:** `{', '.join(nlp_data.get('strengths', [])) or '—'}`")
+                    st.markdown(f"**{tr('lbl_admin_rules')}**")
                     for adm in nlp_data.get("administration", []):
                         st.info(f"👉 {adm}")
                 with col_nl2:
-                    st.markdown(f"**{t('warnings_precautions_header', lang)}:**")
+                    st.markdown(f"**{tr('lbl_safety_warn')}**")
                     for w in nlp_data.get("warnings", []):
                         st.warning(f"⚠️ {w}")
             else:
-                st.info(t("no_pkg_details", lang))
+                st.info(tr("lbl_no_details"))
 
         with tab_audit:
-            st.markdown(f"#### {t('audit_log_title', lang)}")
+            col_laud_h, col_laud_btn = st.columns([3, 1])
+            with col_laud_h:
+                st.markdown(f"#### {tr('lbl_audit_log_heading')}")
+            with col_laud_btn:
+                speak_laud_btn = st.button(tr("btn_read_out"), key="speak_laud_btn", width="stretch")
+
+            if speak_laud_btn:
+                with st.spinner("Generating speech in selected language..."):
+                    corr_list = [
+                        {"original": a.original_ocr_text, "normalized": a.corrected_text, "status": a.verification_status, "reason": a.reason}
+                        for a in (val.audit_log or [])
+                    ]
+                    speech_text = build_audit_speech_text(corr_list, issues=val.issues, lang=st.session_state.user_lang)
+                    audio_bytes = generate_speech_audio(speech_text, lang=st.session_state.user_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                    else:
+                        html_code = get_browser_speech_html(
+                            speech_text,
+                            lang=st.session_state.user_lang,
+                            button_id="browser_speak_laud",
+                            button_label=tr("btn_read_out")
+                        )
+                        components.html(html_code, height=45)
+
             if val.audit_log:
-                df_audit = pd.DataFrame([
+                raw_log = [
                     {
-                        t("col_audit_field", lang): a.field,
-                        t("col_audit_orig", lang): a.original_ocr_text,
-                        t("col_audit_norm", lang): a.corrected_text,
-                        t("col_audit_reason", lang): a.reason,
-                        t("col_audit_status", lang): a.verification_status,
+                        "Field": a.field,
+                        "Original": a.original_ocr_text,
+                        "Normalized": a.corrected_text,
+                        "Reason": a.reason,
+                        "Status": a.verification_status,
                     }
                     for a in val.audit_log
-                ])
+                ]
+                df_audit = pd.DataFrame(format_audit_dataframe(raw_log, st.session_state.user_lang))
                 st.dataframe(df_audit, width="stretch")
 
-            st.markdown(f"#### {t('validation_issues_title', lang)}")
+            st.markdown(f"#### {tr('validation_issues_heading')}")
             if val.issues:
                 for issue in val.issues:
+                    cat_txt, msg_txt = translate_safety_message(issue.message, issue.category, st.session_state.user_lang)
                     if issue.severity == "CRITICAL":
-                        st.error(f"**[{issue.category}]** {issue.message}")
+                        st.error(f"**[{cat_txt}]** {msg_txt}")
                     elif issue.severity == "WARNING":
-                        st.warning(f"**[{issue.category}]** {issue.message}")
+                        st.warning(f"**[{cat_txt}]** {msg_txt}")
                     else:
-                        st.info(f"**[{issue.category}]** {issue.message}")
+                        st.info(f"**[{cat_txt}]** {msg_txt}")
             else:
-                st.success(t("no_discrepancies_detected", lang))
+                st.success(tr("lbl_audit_clean"))
 
         with tab_compare:
-            st.markdown(f"#### {t('comp_header', lang)}")
+            st.markdown(f"#### {tr('compare_heading')}")
             col_c1, col_c2, col_c3 = st.columns(3)
             with col_c1:
-                st.markdown(f"**{t('comp_orig_label', lang)}**")
+                st.markdown(f"**{tr('compare_orig_lbl')}**")
                 st.image(st.session_state.current_image, width="stretch")
             with col_c2:
-                st.markdown(f"**{t('comp_extracted_text', lang)}**")
+                st.markdown(f"**{tr('compare_extracted')}**")
                 st.code(st.session_state.raw_ocr_text, language="text")
             with col_c3:
-                st.markdown(f"**{t('comp_clean_text', lang)}**")
+                st.markdown(f"**{tr('compare_clean')}**")
                 st.code(norm.to_formatted_text(), language="markdown")
 
     else:
         # TABS FOR MEDICAL PRESCRIPTION
         tab_norm, tab_nlp, tab_audit, tab_comp = st.tabs([
-            t("tab_rx_standard", lang),
-            t("tab_rx_regimens", lang),
-            t("tab_rx_audit", lang),
-            t("tab_rx_comparison", lang),
+            tr("tab_rx_standard"),
+            tr("tab_rx_regimens"),
+            tr("tab_rx_audit"),
+            tr("tab_rx_compare"),
         ])
 
         with tab_norm:
-            st.markdown(f"#### {t('rx_header_formatted', lang)}")
-            st.code(norm.to_formatted_text(), language="markdown")
-
-        with tab_nlp:
-            st.markdown(f"#### {t('rx_header_regimens', lang)}")
-            nlp_data = st.session_state.nlp_labels
-            if nlp_data:
-                col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-                with col_m1:
-                    st.metric(t("metric_meds_identified", lang), len(nlp_data.get("medicines", [])))
-                with col_m2:
-                    st.metric(t("metric_strengths_detected", lang), len(nlp_data.get("strengths", [])))
-                with col_m3:
-                    st.metric(t("metric_doses_parsed", lang), len(nlp_data.get("dose", [])))
-                with col_m4:
-                    st.metric(t("metric_freq_normalized", lang), len(nlp_data.get("frequency", [])))
-
-                st.markdown(f"##### {t('tbl_med_groups_title', lang)}")
-                groups = nlp_data.get("medication_groups", [])
-                if groups:
-                    records = []
-                    for g in groups:
-                        dose_val = g.get("dose", {}).get("normalized_value", "") if g.get("dose") else ""
-                        freq_val = g.get("frequency", {}).get("normalized_value", "") if g.get("frequency") else ""
-                        daily_freq = g.get("frequency", {}).get("daily_frequency", "") if g.get("frequency") else ""
-                        timing_val = g.get("timing", {}).get("normalized_value", "") if g.get("timing") else "Unspecified"
-                        records.append({
-                            t("tbl_col_item", lang): g.get("item_number"),
-                            t("tbl_col_medicine", lang): g.get("medicine_name"),
-                            t("tbl_col_formulation", lang): g.get("formulation"),
-                            t("tbl_col_strength", lang): g.get("strength"),
-                            t("tbl_col_dose", lang): dose_val,
-                            t("tbl_col_freq_code", lang): freq_val,
-                            t("tbl_col_daily_intake", lang): f"{daily_freq}x / day" if daily_freq else "",
-                            t("tbl_col_timing", lang): timing_val,
-                            t("tbl_col_instructions", lang): g.get("instructions"),
-                            t("tbl_col_review_flag", lang): t("status_review_yes", lang) if g.get("verification_required") else t("status_verified", lang),
-                        })
-                    st.dataframe(pd.DataFrame(records), width="stretch")
-                else:
-                    st.info(t("no_med_groups", lang))
-
-                if nlp_data.get("timing") or nlp_data.get("administration"):
-                    col_extra1, col_extra2 = st.columns(2)
-                    with col_extra1:
-                        if nlp_data.get("timing"):
-                            st.markdown(f"##### {t('timing_schedule_title', lang)}")
-                            for tm in nlp_data.get("timing", []):
-                                st.info(f"🕐 {tm}")
-                    with col_extra2:
-                        if nlp_data.get("administration"):
-                            st.markdown(f"##### {t('admin_notes_title', lang)}")
-                            for adm in nlp_data.get("administration", []):
-                                st.info(f"👉 {adm}")
+            st.markdown(f"#### {tr('rx_record_heading')}")
+            if st.session_state.user_lang != "en":
+                st.markdown(build_localized_prescription_card(norm, st.session_state.user_lang), unsafe_allow_html=True)
+                st.code(build_localized_prescription_text(norm, st.session_state.user_lang), language="markdown")
             else:
-                st.info(t("run_norm_to_view", lang))
-
-        with tab_audit:
-            st.markdown(f"#### {t('clinical_corr_title', lang)}")
-            if norm.proposed_corrections:
-                df_corr = pd.DataFrame(norm.proposed_corrections)
-                st.dataframe(df_corr, width="stretch")
-            else:
-                st.info(t("no_corrections_needed", lang))
-
-            st.markdown(f"#### {t('validation_issues_title', lang)}")
-            if val.issues:
-                for issue in val.issues:
-                    if issue.severity == "CRITICAL":
-                        st.error(f"**[{issue.category}]** {issue.message}")
-                    elif issue.severity == "WARNING":
-                        st.warning(f"**[{issue.category}]** {issue.message}")
-                    else:
-                        st.info(f"**[{issue.category}]** {issue.message}")
-            else:
-                st.success(t("no_discrepancies_detected", lang))
-
-        with tab_comp:
-            st.markdown(f"#### {t('comp_header', lang)}")
-            col_c1, col_c2, col_c3 = st.columns(3)
-            with col_c1:
-                st.markdown(f"**{t('comp_orig_rx', lang)}**")
-                st.image(st.session_state.current_image, width="stretch")
-            with col_c2:
-                st.markdown(f"**{t('comp_extracted_text', lang)}**")
-                st.code(st.session_state.raw_ocr_text, language="text")
-            with col_c3:
-                st.markdown(f"**{t('comp_clean_text', lang)}**")
                 st.code(norm.to_formatted_text(), language="markdown")
 
+        with tab_nlp:
+            st.markdown(f"#### {tr('regimens_heading')}")
+            nlp_data = st.session_state.nlp_labels or {}
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            with col_m1:
+                st.metric(tr("metric_medicines"), len(nlp_data.get("medicines", [])) or (len(norm.medications) if hasattr(norm, "medications") else 0))
+            with col_m2:
+                st.metric(tr("metric_strengths"), len(nlp_data.get("strengths", [])))
+            with col_m3:
+                st.metric(tr("metric_doses"), len(nlp_data.get("dose", [])))
+            with col_m4:
+                st.metric(tr("metric_frequencies"), len(nlp_data.get("frequency", [])))
 
-    # =========================================================================
-    # MULTILINGUAL CLINICAL VOICE ASSISTANT COMPONENT
-    # =========================================================================
-    st.markdown("---")
-    st.markdown(f"""
-    <div class="glass-card" style="margin-top: 1rem; margin-bottom: 1.5rem; border-left: 4px solid #2563EB;">
-        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem; margin-bottom:0.4rem;">
-            <div style="font-weight:700; font-size:1.15rem; color:#1E3A8A; display:flex; align-items:center; gap:0.5rem;">
-                <span>{t('voice_title', lang)}</span>
-            </div>
-            <span class="pill-badge">🌐 {get_language_info(lang).display_label}</span>
-        </div>
-        <div style="color:#475569; font-size:0.9rem; margin-bottom:0.8rem;">
-            {t('voice_subtitle', lang)}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+            groups = nlp_data.get("medication_groups", [])
+            if not groups and hasattr(norm, "medications") and norm.medications:
+                groups = [
+                    {
+                        "item_number": idx,
+                        "medicine_name": m.medicine_name,
+                        "formulation": m.formulation or "",
+                        "strength": m.strength or "",
+                        "dose": m.dosage_instruction or "",
+                        "frequency": m.frequency or "",
+                        "timing": m.food_timing or "",
+                        "instructions": m.dosage_instruction or "",
+                        "verification_required": not m.is_verified,
+                    }
+                    for idx, m in enumerate(norm.medications, 1)
+                ]
 
-    voice_col1, voice_col2 = st.columns([2, 1])
-    with voice_col1:
-        voice_mode_choice = st.selectbox(
-            t("voice_mode_title", lang),
-            options=["auto", "online", "offline"],
-            format_func=lambda m: {
-                "auto": t("voice_mode_auto", lang),
-                "online": t("voice_mode_online", lang),
-                "offline": t("voice_mode_offline", lang),
-            }.get(m, m),
-            index=["auto", "online", "offline"].index(st.session_state.voice_mode),
-            key="voice_mode_selector_dropdown",
-        )
-        st.session_state.voice_mode = voice_mode_choice
+            col_tbl_h, col_tbl_btn = st.columns([3, 1])
+            with col_tbl_h:
+                st.markdown(f"##### {tr('groups_heading')}")
+            with col_tbl_btn:
+                speak_regimens_btn = st.button(tr("btn_read_out"), key="speak_regimens_btn", width="stretch")
 
-    with voice_col2:
-        st.write("")
-        st.write("")
-        btn_summary_audio = st.button(t("voice_btn_play_summary", lang), type="primary", width="stretch")
+            if speak_regimens_btn:
+                if groups:
+                    with st.spinner("Generating speech in selected language..."):
+                        speech_text = build_regimens_speech_text(groups, lang=st.session_state.user_lang)
+                        audio_bytes = generate_speech_audio(speech_text, lang=st.session_state.user_lang)
+                        if audio_bytes:
+                            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                        else:
+                            html_code = get_browser_speech_html(
+                                speech_text,
+                                lang=st.session_state.user_lang,
+                                button_id="browser_speak_regimens",
+                                button_label=tr("btn_read_out")
+                            )
+                            components.html(html_code, height=45)
+                else:
+                    st.info(tr("no_groups"))
 
-    col_guide, _ = st.columns([1, 1])
-    with col_guide:
-        btn_guide_audio = st.button(t("voice_btn_guide", lang), width="stretch")
+            if groups:
+                records = []
+                for g in groups:
+                    dose_val = g.get("dose", {}).get("normalized_value", "") if isinstance(g.get("dose"), dict) else (g.get("dose") or "")
+                    freq_val = g.get("frequency", {}).get("normalized_value", "") if isinstance(g.get("frequency"), dict) else (g.get("frequency") or "")
+                    daily_freq = g.get("frequency", {}).get("daily_frequency", "") if isinstance(g.get("frequency"), dict) else ""
+                    timing_obj = g.get("timing")
+                    if isinstance(timing_obj, dict):
+                        timing_val = timing_obj.get("timing_type") or timing_obj.get("normalized_value") or "Unspecified"
+                    else:
+                        timing_val = timing_obj or "Unspecified"
 
-    # Audio synthesis handling
-    if btn_summary_audio:
-        with st.spinner(f"{t('voice_spinner', lang)} {get_language_info(lang).native_name}..."):
-            if is_label:
-                st.session_state.active_voice_resp = voice_mgr.get_medicine_label_summary_audio(
-                    norm, target_lang=lang, mode=voice_mode_choice
-                )
+                    form_val = translate_formulation(g.get("formulation", ""), st.session_state.user_lang)
+                    dose_trans = translate_dose(dose_val, st.session_state.user_lang)
+                    daily_trans = translate_daily_intake(f"{daily_freq}x / day" if daily_freq else "", st.session_state.user_lang)
+                    timing_trans = translate_timing(timing_val, st.session_state.user_lang)
+                    instructions_trans = translate_clinical_instruction(g.get("instructions", ""), st.session_state.user_lang)
+
+                    records.append({
+                        tr("col_item"): g.get("item_number"),
+                        tr("col_medicine"): g.get("medicine_name"),
+                        tr("col_formulation"): form_val,
+                        tr("col_strength"): g.get("strength"),
+                        tr("col_dose"): dose_trans,
+                        tr("col_freq"): freq_val,
+                        tr("col_daily"): daily_trans,
+                        tr("col_timing"): timing_trans,
+                        tr("col_instructions"): instructions_trans,
+                        tr("col_review"): tr("flag_review") if g.get("verification_required") else tr("flag_verified"),
+                    })
+                st.dataframe(pd.DataFrame(records), width="stretch")
             else:
-                st.session_state.active_voice_resp = voice_mgr.get_prescription_summary_audio(
-                    norm, target_lang=lang, mode=voice_mode_choice
-                )
+                st.info(tr("no_groups"))
 
-    elif btn_guide_audio:
-        with st.spinner(f"{t('voice_spinner', lang)} {get_language_info(lang).native_name}..."):
-            st.session_state.active_voice_resp = voice_mgr.get_navigation_guide_audio(
-                target_lang=lang, mode=voice_mode_choice
-            )
+            if nlp_data.get("timing") or nlp_data.get("administration"):
+                col_extra1, col_extra2 = st.columns(2)
+                with col_extra1:
+                    if nlp_data.get("timing"):
+                        st.markdown(f"##### {tr('timing_schedule')}")
+                        for timing_item in nlp_data.get("timing", []):
+                            if isinstance(timing_item, dict):
+                                t_raw = timing_item.get("timing_type") or timing_item.get("normalized_value") or timing_item.get("original_text", "")
+                            else:
+                                t_raw = str(timing_item)
+                            t_disp = translate_timing(t_raw, st.session_state.user_lang)
+                            if t_disp:
+                                st.info(f"🕐 {t_disp}")
+                with col_extra2:
+                    if nlp_data.get("administration"):
+                        st.markdown(f"##### {tr('admin_notes')}")
+                        for adm in nlp_data.get("administration", []):
+                            st.info(f"👉 {adm}")
 
-    # Field-Wise Speech Accordion
-    with st.expander(t("voice_field_wise_title", lang), expanded=False):
-        if is_label:
-            field_scripts = SpeechTextFormatter.format_medicine_label_field_scripts(norm)
-        else:
-            field_scripts = SpeechTextFormatter.format_prescription_field_scripts(norm)
+        with tab_audit:
+            col_aud_h, col_aud_btn = st.columns([3, 1])
+            with col_aud_h:
+                st.markdown(f"#### {tr('audit_heading')}")
+            with col_aud_btn:
+                speak_audit_btn = st.button(tr("btn_read_out"), key="speak_audit_btn", width="stretch")
 
-        for f_label, f_script in field_scripts.items():
-            f_col_text, f_col_btn = st.columns([4, 1])
-            with f_col_text:
-                st.markdown(f"**{f_label}:** {f_script}")
-            with f_col_btn:
-                if st.button(f"🔊 {t('voice_btn_play_field', lang)}", key=f"btn_voice_field_{f_label}", width="stretch"):
-                    with st.spinner(f"{t('voice_spinner', lang)} {get_language_info(lang).native_name}..."):
-                        st.session_state.active_voice_resp = voice_mgr.process_speech(
-                            english_text=f_script,
-                            target_lang=lang,
-                            mode=voice_mode_choice,
+            if speak_audit_btn:
+                with st.spinner("Generating speech in selected language..."):
+                    corrections_list = norm.proposed_corrections if norm.proposed_corrections else []
+                    speech_text = build_audit_speech_text(corrections_list, issues=val.issues, lang=st.session_state.user_lang)
+                    audio_bytes = generate_speech_audio(speech_text, lang=st.session_state.user_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                    else:
+                        html_code = get_browser_speech_html(
+                            speech_text,
+                            lang=st.session_state.user_lang,
+                            button_id="browser_speak_audit",
+                            button_label=tr("btn_read_out")
                         )
+                        components.html(html_code, height=45)
 
-    # Active Audio Player & Engine Badge
-    current_audio_resp = st.session_state.get("active_voice_resp")
-    if current_audio_resp and current_audio_resp.audio_bytes:
-        st.audio(current_audio_resp.audio_bytes, format=current_audio_resp.mime_type)
+            if norm.proposed_corrections:
+                formatted_corr = format_audit_dataframe(norm.proposed_corrections, st.session_state.user_lang)
+                df_corr = pd.DataFrame(formatted_corr)
+                st.dataframe(df_corr, width="stretch")
+            else:
+                st.info(tr("audit_clean"))
 
-        badge_text = t("voice_online_badge", lang) if "online" in current_audio_resp.tts_engine_used else t("voice_offline_badge", lang)
-        if current_audio_resp.is_tts_fallback:
-            badge_text = t("voice_fallback_badge", lang)
+            st.markdown(f"#### {tr('validation_issues_heading')}")
+            if val.issues:
+                for issue in val.issues:
+                    cat_txt, msg_txt = translate_safety_message(issue.message, issue.category, st.session_state.user_lang)
+                    if issue.severity == "CRITICAL":
+                        st.error(f"**[{cat_txt}]** {msg_txt}")
+                    elif issue.severity == "WARNING":
+                        st.warning(f"**[{cat_txt}]** {msg_txt}")
+                    else:
+                        st.info(f"**[{cat_txt}]** {msg_txt}")
+            else:
+                st.success(tr("validation_clean"))
 
-        st.caption(f"🎧 {badge_text} • {get_language_info(current_audio_resp.target_language).display_label}")
+        with tab_comp:
+            st.markdown(f"#### {tr('compare_heading')}")
+            col_c1, col_c2, col_c3 = st.columns(3)
+            with col_c1:
+                st.markdown(f"**{tr('compare_orig_rx')}**")
+                st.image(st.session_state.current_image, width="stretch")
+            with col_c2:
+                st.markdown(f"**{tr('compare_extracted')}**")
+                st.code(st.session_state.raw_ocr_text, language="text")
+            with col_c3:
+                st.markdown(f"**{tr('compare_clean')}**")
+                compare_text = (
+                    build_localized_prescription_text(norm, st.session_state.user_lang)
+                    if st.session_state.user_lang != "en"
+                    else norm.to_formatted_text()
+                )
+                st.code(compare_text, language="markdown")
 
-        with st.expander(t("voice_script_preview", lang), expanded=False):
-            st.markdown(f"**Spoken Script ({get_language_info(current_audio_resp.target_language).native_name}):**")
-            st.write(current_audio_resp.spoken_text)
-            st.markdown("**Original English Clinical Text:**")
-            st.caption(current_audio_resp.original_english_text)
-
-    st.info(t("voice_disclaimer", lang))
-
-
-# SECTION 4: EXPORTS & DOWNLOADS
-if st.session_state.normalized_result is not None:
-    norm = st.session_state.normalized_result
-    val = st.session_state.validation_report
-    is_label = isinstance(norm, NormalizedMedicineLabel)
-
+    # SECTION 4: EXPORTS & DOWNLOADS
     st.markdown("---")
     st.markdown(f"""
     <div class="section-header">
         <div class="section-number">4</div>
-        <div class="section-title-text">{t('sec_4_title', lang)}</div>
+        <div class="section-title-text">{tr('sec4_title')}</div>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1048,7 +1084,7 @@ if st.session_state.normalized_result is not None:
     # 1. raw_ocr.txt
     with col_d1:
         st.download_button(
-            label=t("btn_dl_raw_text", lang),
+            label=tr("dl_raw"),
             data=st.session_state.raw_ocr_text,
             file_name="raw_ocr.txt",
             mime="text/plain",
@@ -1058,7 +1094,7 @@ if st.session_state.normalized_result is not None:
     # 2. normalized text
     with col_d2:
         st.download_button(
-            label=t("btn_dl_clinical_record", lang),
+            label=tr("dl_record"),
             data=norm.to_formatted_text(),
             file_name=norm_filename,
             mime="text/plain",
@@ -1068,7 +1104,7 @@ if st.session_state.normalized_result is not None:
     # 3. structured json
     with col_d3:
         st.download_button(
-            label=t("btn_dl_clinical_report", lang),
+            label=tr("dl_report"),
             data=json.dumps(norm.to_export_json(), indent=2),
             file_name=json_filename,
             mime="application/json",
@@ -1078,7 +1114,7 @@ if st.session_state.normalized_result is not None:
     # 4. validation_report.json
     with col_d4:
         st.download_button(
-            label=t("btn_dl_safety_audit", lang),
+            label=tr("dl_audit"),
             data=json.dumps(val.to_dict(), indent=2),
             file_name="validation_report.json",
             mime="application/json",
@@ -1089,7 +1125,7 @@ if st.session_state.normalized_result is not None:
     with col_d5:
         nlp_json_str = json.dumps(st.session_state.nlp_labels or {}, indent=2)
         st.download_button(
-            label=t("btn_dl_regimen_dataset", lang),
+            label=tr("dl_regimen"),
             data=nlp_json_str,
             file_name="nlp_medication_labels.json",
             mime="application/json",
@@ -1102,37 +1138,37 @@ st.markdown("---")
 st.markdown(f"""
 <div class="section-header">
     <div class="section-number">5</div>
-    <div class="section-title-text">{t('sec_5_title', lang)}</div>
+    <div class="section-title-text">{tr('sec5_title')}</div>
 </div>
 """, unsafe_allow_html=True)
-st.caption(t("sec_5_caption", lang))
+st.caption(tr("sec5_caption"))
 
-with st.expander(t("quickscan_expander", lang), expanded=False):
+with st.expander(tr("sec5_expander"), expanded=False):
     sample_box_labels = {
-        t("quickscan_custom_input", lang): "",
+        tr("sec5_custom"): "",
         "Paracetamol 650mg Packaging": "PARACETAMOL TABLETS IP 650 mg\nEach tablet contains: Paracetamol IP 650 mg.\nDosage: As directed by the physician.\nSwallow with water.\nWarning: Do not exceed the recommended dosage. Keep out of reach of children.\nStore in a cool and dry place.",
         "Cetirizine 10mg Packaging": "CETIRIZINE TABLETS IP\nEach tablet contains: Cetirizine Hydrochloride IP 10 mg.\nDosage: As directed by the physician.\nSchedule H Prescription Drug - Caution: Not to be sold by retail without the prescription of a Registered Medical Practitioner.\nStore below 30°C.",
         "Amoxicillin 500mg Packaging": "AMOXI-500 CAPSULES\nEach capsule contains: Amoxicillin Trihydrate IP equivalent to Amoxicillin 500 mg.\nDosage: As directed by the physician. Capsules to be swallowed whole and not to be chewed, opened or crushed.\nKeep out of reach of children. Store protected from moisture.",
     }
 
-    selected_box = st.selectbox(t("quickscan_select_label", lang), list(sample_box_labels.keys()), index=1)
+    selected_box = st.selectbox(tr("sec5_select_sample"), list(sample_box_labels.keys()), index=1)
     default_text = sample_box_labels[selected_box]
-    box_text_input = st.text_area(t("quickscan_input_label", lang), value=default_text, height=120)
+    box_text_input = st.text_area(tr("sec5_input_label"), value=default_text, height=120)
 
-    if st.button(t("btn_extract_packaging", lang), type="secondary"):
+    if st.button(tr("sec5_btn"), type="secondary"):
         if box_text_input.strip():
             box_res = pipeline.labeller.label_medicine_label(box_text_input)
             col_b1, col_b2 = st.columns(2)
             with col_b1:
-                st.markdown(f"**{t('identified_meds_strengths', lang)}:**")
-                st.write(f"- `{', '.join(box_res.get('medicines', [])) or 'None'}`")
-                st.write(f"- `{', '.join(box_res.get('strengths', [])) or 'None'}`")
-                st.markdown(f"**{t('administration_rules', lang)}:**")
+                st.markdown(f"**{tr('lbl_ident_meds')}**")
+                st.write(f"- **{tr('col_medicine')}:** `{', '.join(box_res.get('medicines', [])) or '—'}`")
+                st.write(f"- **{tr('col_strength')}:** `{', '.join(box_res.get('strengths', [])) or '—'}`")
+                st.markdown(f"**{tr('lbl_admin_rules')}**")
                 for adm in box_res.get("administration", []):
                     st.info(f"👉 {adm}")
             with col_b2:
-                st.markdown(f"**{t('warnings_precautions_header', lang)}:**")
+                st.markdown(f"**{tr('lbl_safety_warn')}**")
                 for w in box_res.get("warnings", []):
                     st.warning(f"⚠️ {w}")
         else:
-            st.warning(t("warn_enter_box_text", lang))
+            st.warning(tr("sec5_enter_text"))

@@ -3,9 +3,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-green.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Model](https://img.shields.io/badge/HuggingFace-KushagraWadhwa%2Fmedical--prescription--ocr--india-orange.svg)](https://huggingface.co/KushagraWadhwa/medical-prescription-ocr-india)
-[![Tests](https://img.shields.io/badge/pytest-46%2F46%20passing-brightgreen.svg)]()
-[![Languages](https://img.shields.io/badge/Languages-8%20Supported-blue.svg)]()
-[![Voice](https://img.shields.io/badge/Voice%20Assistant-Hybrid%20Online%2FOffline-purple.svg)]()
+[![Tests](https://img.shields.io/badge/pytest-36%2F36%20passing-brightgreen.svg)]()
 
 Production-grade medical prescription and medicine packaging scanner, OCR extraction, intelligent clinical normalization, and medication labelling pipeline tailored for Indian handwritten/printed prescriptions and pharmaceutical box/bottle labels. Integrates Member 1's Vision-Language OCR & Normalization engine with Member 2's trained spaCy NER Medication Labeller for end-to-end dosing safety.
 
@@ -294,61 +292,7 @@ python evaluate_all.py
 
 ---
 
-## 7. Multilingual Architecture & Voice Assistant
-
-### A. 8 Supported Languages
-
-MediScan AI provides a centralized internationalization (i18n) layer in `localization/` supporting:
-
-| Code | Language | Native Name | Script | Voice Synthesis |
-| :---: | :--- | :--- | :--- | :--- |
-| **`en`** | English | English | Latin | English HD Voice |
-| **`te`** | Telugu | తెలుగు | Telugu | Telugu HD Voice |
-| **`hi`** | Hindi | हिन्दी | Devanagari | Hindi HD Voice |
-| **`ta`** | Tamil | தமிழ் | Tamil | Tamil HD Voice |
-| **`kn`** | Kannada | ಕನ್ನಡ | Kannada | Kannada HD Voice |
-| **`ml`** | Malayalam | മലയാളം | Malayalam | Malayalam HD Voice |
-| **`bn`** | Bengali | বাংলা | Bengali | Bengali HD Voice |
-| **`mr`** | Marathi | मराठी | Devanagari | Marathi HD Voice |
-
-**Zero-Rerun Language Switching:**
-Changing the language dynamically updates 100% of the UI (buttons, headings, metric cards, table headers, alerts, and disclaimers) using Streamlit session state without re-invoking the OCR or NLP pipelines.
-
----
-
-### B. Hybrid Multilingual Voice Assistant (`voice_assistant/`)
-
-Enables patients and healthcare providers to listen to standardized clinical records in any of the 8 supported languages:
-
-1. **Speech Engine Modes**:
-   - **`Automatic / Hybrid` (Recommended)**: Synthesizes high-definition natural voice online; gracefully falls back to local synthesis if internet is interrupted.
-   - **`Online Only`**: Uses Google Neural Text-to-Speech (gTTS) with native regional pronunciation.
-   - **`Offline Only`**: Uses local synthesis without sending any data over the network.
-2. **Transparent Engine Reporting**:
-   - The UI clearly indicates which voice engine synthesized the audio (`🌐 Synthesized via Online Voice Engine` or `💻 Synthesized via Offline Local Engine`).
-3. **Playback Capabilities**:
-   - **Full Summary Playback**: Comprehensive spoken summary of patient, date, all medications, dosages, food timings, and physician instructions.
-   - **Field-Wise Speech**: Accordion allowing users to listen to individual medicines, strengths, or caution warnings one by one.
-   - **Spoken System Guide**: Spoken walkthrough guiding users through uploading, scanning, and verifying prescriptions.
-
----
-
-### C. Clinical Translation Safety Guardrails
-
-Because clinical instructions carry life-critical importance:
-- **Medicine Names Preserved Verbatim**: Active generic and brand names (e.g. *Metoprolol*, *Paracetamol*, *Amoxicillin*) are shielded with placeholders during translation to prevent dangerous phonetic mistranslations.
-- **Numbers & Units Strictly Conserved**: Numerical dosages (`650 mg`, `10 ml`, `5 days`, `1 tab`) are mathematically verified for 100% presence between input and output.
-- **No Hallucination**: Missing or unverified clinical details remain flagged as `"Not specified"` or `"Requires verification"`.
-- **Side-by-Side Transcript**: The exact translated spoken script is displayed alongside the original English text for clinician verification.
-
----
-
-### D. Privacy & Data Protection
-
-- **Ephemeral Audio**: Audio tracks are generated in-memory (`io.BytesIO`) and temporary session state; no patient voice recordings or identifiable text are permanently stored on disk.
-- **HIPAA / DPDP Aligned**: Medical text is anonymized with token masking before transmission to speech engines.
-- **Offline Security**: Users in sensitive medical environments can select **Offline Local Voice Only** to prevent external network traffic.
-
+## 6. Evaluation & Benchmark Results
 
 Evaluated on genuine scanned and photographed Indian medical prescriptions extracted from `naazimsnh02/medocr-vision-dataset` as well as authentic pharmaceutical packaging labels:
 

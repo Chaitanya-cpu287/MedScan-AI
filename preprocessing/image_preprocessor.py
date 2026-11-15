@@ -131,8 +131,8 @@ class ImagePreprocessor:
             return img, False, 0.0
 
         angles = []
-        for line in lines:
-            x1, y1, x2, y2 = line[0]
+        for line in np.reshape(lines, (-1, 4)):
+            x1, y1, x2, y2 = line
             angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
             # Focus on near horizontal lines (-45 to 45 degrees)
             if -45 < angle < 45:
@@ -144,8 +144,8 @@ class ImagePreprocessor:
         median_angle = float(np.median(angles))
         max_safe_angle = self.settings.deskew_max_angle
 
-        # Only deskew if noticeable (> 0.75 deg) and safe (<= max_safe_angle)
-        if 0.75 <= abs(median_angle) <= max_safe_angle:
+        # Only deskew if clearly tilted (> 2.0 deg) and safe (<= max_safe_angle) to avoid blurring crumpled paper
+        if 2.0 <= abs(median_angle) <= max_safe_angle:
             h, w = np_img.shape[:2]
             center = (w // 2, h // 2)
             rot_matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)

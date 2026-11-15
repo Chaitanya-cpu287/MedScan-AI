@@ -28,7 +28,7 @@ class ModelSettings:
 class PreprocessingSettings:
     supported_extensions: tuple = (".jpg", ".jpeg", ".png", ".webp")
     max_dimension: int = 1800
-    clahe_clip_limit: float = 2.0
+    clahe_clip_limit: float = 1.5
     clahe_tile_grid_size: tuple = (8, 8)
     denoise_strength: int = 3
     deskew_max_angle: float = 15.0
